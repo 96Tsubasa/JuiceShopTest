@@ -1,0 +1,60 @@
+name: juice-shop-waf-lab
+
+services:
+  web:
+    image: bkimminich/juice-shop:latest
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - lab
+    healthcheck:
+      test:
+        - CMD
+        - /nodejs/bin/node
+        - -e
+        - "require('node:http').get('http://127.0.0.1:3000/', r => { r.resume(); process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  waf:
+    image: owasp/modsecurity-crs:nginx
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      BACKEND: http://web:3000
+      PORT: "8080"
+      SERVER_NAME: localhost
+      MODSEC_RULE_ENGINE: "On"
+      MODSEC_REQ_BODY_ACCESS: "On"
+      BLOCKING_PARANOIA: "1"
+      ANOMALY_INBOUND: "5"
+      MODSEC_AUDIT_ENGINE: RelevantOnly
+      MODSEC_AUDIT_LOG: /dev/stdout
+      MODSEC_AUDIT_LOG_FORMAT: JSON
+      MODSEC_AUDIT_LOG_TYPE: Serial
+      # Keep rule messages (H); omit request/response bodies and tokens (C, E).
+      MODSEC_AUDIT_LOG_PARTS: ABFHZ
+      ACCESSLOG: /dev/stdout
+      ERRORLOG: /dev/stderr
+      LOGLEVEL: warn
+    networks:
+      - lab
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  lab:
+    driver: bridge
